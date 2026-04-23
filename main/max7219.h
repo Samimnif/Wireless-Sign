@@ -58,6 +58,7 @@ esp_err_t max7219_draw_bitmap8(max7219_t *dev, int x, const uint8_t bitmap[8]);
 esp_err_t max7219_draw_char(max7219_t *dev, int x, char c);
 esp_err_t max7219_draw_text(max7219_t *dev, int x, const char *text);
 esp_err_t max7219_scroll_text(max7219_t *dev, const char *text, int delay_ms);
+esp_err_t max7219_message_arrival_animation(max7219_t *dev, int delay_ms);
 
 #ifdef __cplusplus
 }

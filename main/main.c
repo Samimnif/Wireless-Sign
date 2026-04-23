@@ -57,39 +57,6 @@ static SemaphoreHandle_t g_state_mutex;
 
 static max7219_t g_display;
 
-// static const uint8_t SMILEY[8] = {
-//     0b00111100,
-//     0b01000010,
-//     0b10100101,
-//     0b10000001,
-//     0b10100101,
-//     0b10011001,
-//     0b01000010,
-//     0b00111100,
-// };
-
-// static const uint8_t HEART[8] = {
-//     0b00000000,
-//     0b01100110,
-//     0b11111111,
-//     0b11111111,
-//     0b01111110,
-//     0b00111100,
-//     0b00011000,
-//     0b00000000,
-// };
-
-// static const uint8_t CROSS[8] = {
-//     0b10000001,
-//     0b01000010,
-//     0b00100100,
-//     0b00011000,
-//     0b00011000,
-//     0b00100100,
-//     0b01000010,
-//     0b10000001,
-// };
-
 void make_device_id(char *out, size_t out_size)
 {
     uint8_t mac[6];
@@ -463,6 +430,7 @@ void display_task(void *pv)
 
         if (has_message && strlen(message_copy) > 0)
         {
+            max7219_message_arrival_animation(display, 40);
             if (strcmp(message_mode, "static") == 0)
             {
                 max7219_clear(display);
@@ -502,69 +470,6 @@ void display_task(void *pv)
     }
 }
 
-static void draw_wifi_bars(max7219_t *display, int level)
-
-{
-
-    max7219_clear(display);
-
-    // base positions near the middle of 32x8 display
-
-    // x grows left to right, y grows top to bottom
-
-    // bottom row is y = 7
-
-    // small center dot
-
-    max7219_set_pixel(display, 15, 7, true);
-
-    max7219_set_pixel(display, 16, 7, true);
-
-    // level 1
-
-    if (level >= 1) {
-
-        max7219_set_pixel(display, 13, 6, true);
-        max7219_set_pixel(display, 18, 6, true);
-
-    }
-
-    // level 2
-
-    if (level >= 2) {
-
-        max7219_set_pixel(display, 11, 5, true);
-        max7219_set_pixel(display, 12, 5, true);
-        max7219_set_pixel(display, 19, 5, true);
-        max7219_set_pixel(display, 20, 5, true);
-
-    }
-
-    // level 3
-
-    if (level >= 3) {
-
-        max7219_set_pixel(display, 9, 4, true);
-        max7219_set_pixel(display, 10, 4, true);
-        max7219_set_pixel(display, 21, 4, true);
-        max7219_set_pixel(display, 22, 4, true);
-
-    }
-
-    // level 4
-
-    if (level >= 4) {
-
-        max7219_set_pixel(display, 7, 3, true);
-        max7219_set_pixel(display, 8, 3, true);
-        max7219_set_pixel(display, 23, 3, true);
-        max7219_set_pixel(display, 24, 3, true);
-
-    }
-
-    max7219_refresh(display);
-
-}
 
 // ─── app_main ─────────────────────────────────────────────────────
 void app_main(void)
@@ -645,84 +550,9 @@ void app_main(void)
     while (!wifi_is_connected())
     {
         max7219_scroll_text(&g_display,
-                            "Connect to 'Matrix_Config_AP' and setup WiFi",
+                            ":wifi: Connect to 'Matrix_Config_AP' and setup WiFi",
                             35);
     }
-
-    // ESP_LOGI(TAG, "Drawing emojis");
-
-    // max7219_clear(&display);
-
-    // max7219_draw_bitmap8(&display, 0,  SMILEY);
-    // max7219_draw_bitmap8(&display, 8,  HEART);
-    // max7219_draw_bitmap8(&display, 16, CROSS);
-    // max7219_draw_bitmap8(&display, 24, SMILEY);
-
-    // max7219_refresh(&display);
-    // vTaskDelay(pdMS_TO_TICKS(2000));
-
-    // // ─── Test 4: Moving vertical line ─────────
-    // ESP_LOGI(TAG, "Moving line test");
-
-    // for (int x = 0; x < 32; x++) {
-    //     max7219_clear(&display);
-
-    //     for (int y = 0; y < 8; y++) {
-    //         max7219_set_pixel(&display, x, y, true);
-    //         max7219_set_pixel(&display, x+1, y, true);
-    //     }
-
-    //     max7219_refresh(&display);
-    //     vTaskDelay(pdMS_TO_TICKS(50));
-    // }
-
-    // // ─── Test 5: Moving pixel ─────────
-    // ESP_LOGI(TAG, "Moving pixel test");
-
-    // for (int x = 0; x < 32; x++) {
-    //     max7219_clear(&display);
-
-    //     max7219_set_pixel(&display, x, x % 8, true);
-
-    //     max7219_refresh(&display);
-    //     vTaskDelay(pdMS_TO_TICKS(80));
-    // }
-
-    // max7219_clear(&display);
-    // max7219_set_pixel(&display, 7, 3, true);   // last col of matrix 1
-    // max7219_set_pixel(&display, 8, 3, true);   // first col of matrix 2
-    // max7219_set_pixel(&display, 9, 3, true);   // second col of matrix 2
-    // max7219_refresh(&display);
-    // vTaskDelay(pdMS_TO_TICKS(2000));
-
-    // max7219_clear(&display);
-    // max7219_draw_text(&display, 0, "HEJ");
-    // max7219_refresh(&display);
-    // vTaskDelay(pdMS_TO_TICKS(2000));
-
-    // max7219_clear(&display);
-    // max7219_draw_text(&display, 0, "1234");
-    // max7219_refresh(&display);
-    // vTaskDelay(pdMS_TO_TICKS(2000));
-
-    // max7219_clear(&display);
-    // max7219_draw_text(&display, 0, "ESP32");
-    // max7219_refresh(&display);
-    // vTaskDelay(pdMS_TO_TICKS(2000));
-
-    // max7219_clear(&display);
-    // max7219_draw_char(&display, 0, 'H');
-    // max7219_draw_char(&display, 6, 'I');
-    // max7219_refresh(&display);
-
-    // ESP_ERROR_CHECK(max7219_scroll_text(&display, "abcdABCD", 80));
-    // vTaskDelay(pdMS_TO_TICKS(500));
-
-    // ESP_ERROR_CHECK(max7219_scroll_text(&display, "ESP32 WIFI SETUP", 60));
-    // vTaskDelay(pdMS_TO_TICKS(500));
-
-    // ESP_ERROR_CHECK(max7219_scroll_text(&display, "HI :)", 80));
-    // vTaskDelay(pdMS_TO_TICKS(500));
 }
 /**
     ## Flow Diagram
