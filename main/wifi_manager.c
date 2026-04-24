@@ -79,10 +79,10 @@ void wifi_init(void)
             .ssid = "Matrix_Config_AP",
             .ssid_len = strlen("Matrix_Config_AP"),
             .channel = 1,
-            .password = "12345678",
+            .password = "", //keep it open 12345678
             .max_connection = 2,
             .ssid_hidden = 0,
-            .authmode = WIFI_AUTH_WPA2_PSK,
+            .authmode = WIFI_AUTH_OPEN, //WIFI_AUTH_WPA2_PSK,
             .pmf_cfg = {
                 .required = true,
             },

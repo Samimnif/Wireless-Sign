@@ -13,6 +13,7 @@
 #include "wifi_manager.h"
 #include "portal.h"
 #include "time_manager.h"
+#include "buzzer.h"
 
 #include "cJSON.h"
 
@@ -26,6 +27,8 @@ static const char *TAG = "MAIN";
 
 static char g_server_url[128] = SERVER_URL;
 static char g_device_id[32];
+
+static buzzer_t g_buzzer;
 
 typedef struct
 {
@@ -430,6 +433,7 @@ void display_task(void *pv)
 
         if (has_message && strlen(message_copy) > 0)
         {
+            buzzer_beep(&g_buzzer, 100);
             max7219_message_arrival_animation(display, 40);
             if (strcmp(message_mode, "static") == 0)
             {
@@ -470,12 +474,13 @@ void display_task(void *pv)
     }
 }
 
-
 // ─── app_main ─────────────────────────────────────────────────────
 void app_main(void)
 {
     make_device_id(g_device_id, sizeof(g_device_id));
     ESP_LOGI(TAG, "Device ID: %s", g_device_id);
+
+    buzzer_init(&g_buzzer, 10);
 
     // 1. Init NVS
     esp_err_t ret = nvs_flash_init();
