@@ -196,7 +196,6 @@ static const uint8_t emoji_wifi[8] = {
     0b11011011,
 };
 
-
 /*
  * Assumptions:
  * - num_devices matrices are chained together
@@ -369,6 +368,14 @@ esp_err_t max7219_deinit(max7219_t *dev)
     return ESP_OK;
 }
 
+void max7219_set_flip(max7219_t *dev, bool flip)
+{
+    if (dev)
+    {
+        dev->flip = flip;
+    }
+}
+
 esp_err_t max7219_set_intensity(max7219_t *dev, uint8_t intensity)
 {
     if (dev == NULL)
@@ -518,8 +525,23 @@ esp_err_t max7219_refresh(max7219_t *dev)
 
             for (int bit = 0; bit < 8; bit++)
             {
+                // int x = d * 8 + bit;
+                // if (dev->buffer[row][x])
+                // {
+                //     b |= (1U << (7 - bit));
+                // }
+                int width = dev->num_devices * 8;
+
                 int x = d * 8 + bit;
-                if (dev->buffer[row][x])
+                int y = row;
+
+                if (dev->flip)
+                {
+                    x = width - 1 - x; // horizontal flip
+                    y = 7 - row;       // vertical flip
+                }
+
+                if (dev->buffer[y][x])
                 {
                     b |= (1U << (7 - bit));
                 }

@@ -46,6 +46,8 @@ typedef struct
     int utc_offset_hours;
     bool time_format_24h;
 
+    bool flip_display;
+
     int scroll_speed_ms;
 } server_config_t;
 
@@ -266,6 +268,7 @@ bool parse_server_config_json(const char *json_str, server_config_t *cfg)
     cJSON *utc_offset_hours = cJSON_GetObjectItem(root, "utc_offset_hours");
     cJSON *time_format_24h = cJSON_GetObjectItem(root, "time_format_24h");
     cJSON *scroll_speed_ms = cJSON_GetObjectItem(root, "scroll_speed_ms");
+    cJSON *flip_display = cJSON_GetObjectItem(root, "flip_display");
 
     if (cJSON_IsString(message) && message->valuestring != NULL)
     {
@@ -289,6 +292,7 @@ bool parse_server_config_json(const char *json_str, server_config_t *cfg)
     cfg->utc_offset_hours = cJSON_IsNumber(utc_offset_hours) ? utc_offset_hours->valueint : 0;
     cfg->time_format_24h = cJSON_IsBool(time_format_24h) ? cJSON_IsTrue(time_format_24h) : true;
     cfg->scroll_speed_ms = cJSON_IsNumber(scroll_speed_ms) ? scroll_speed_ms->valueint : 60;
+    cfg->flip_display = cJSON_IsBool(flip_display) ? cJSON_IsTrue(flip_display) : false;
 
     strcpy(cfg->message_mode, "scroll");
 
@@ -316,6 +320,7 @@ void update_shared_server_config(const server_config_t *cfg)
         g_state.server_cfg.utc_offset_hours = cfg->utc_offset_hours;
         g_state.server_cfg.time_format_24h = cfg->time_format_24h;
         g_state.server_cfg.scroll_speed_ms = cfg->scroll_speed_ms;
+        g_state.server_cfg.flip_display = cfg->flip_display;
 
         strncpy(g_state.server_cfg.message_mode,
                 cfg->message_mode,
@@ -395,6 +400,7 @@ void display_task(void *pv)
     int scroll_speed_ms = 60;
     int utc_offset_hours = 0;
     bool time_format_24h = true;
+    bool flip_display = false;
 
     char time_copy[6] = "--:--";
     char message_copy[128] = {0};
@@ -420,6 +426,7 @@ void display_task(void *pv)
             scroll_speed_ms = g_state.server_cfg.scroll_speed_ms;
             utc_offset_hours = g_state.server_cfg.utc_offset_hours;
             time_format_24h = g_state.server_cfg.time_format_24h;
+            flip_display = g_state.server_cfg.flip_display;
             strncpy(message_mode, g_state.server_cfg.message_mode, sizeof(message_mode) - 1);
             message_mode[sizeof(message_mode) - 1] = '\0';
             message_seconds = g_state.server_cfg.message_seconds;
@@ -427,6 +434,7 @@ void display_task(void *pv)
         }
 
         max7219_set_intensity(display, brightness);
+        max7219_set_flip(display, flip_display);
 
         ESP_LOGI(TAG, "display_task: time='%s' show_clock=%d brightness=%d has_message=%d",
                  time_copy, show_clock, brightness, has_message);
@@ -503,6 +511,7 @@ void app_main(void)
     g_state_mutex = xSemaphoreCreateMutex();
 
     ESP_ERROR_CHECK(max7219_init(&g_display, &cfg));
+    max7219_set_flip(&g_display, false);   // upside down
     ESP_LOGI(TAG, "Driver test starting");
 
     // 2. Init WiFi

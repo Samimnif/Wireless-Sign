@@ -44,6 +44,7 @@ typedef struct {
     bool initialized;
     int num_devices;
     uint8_t buffer[MAX7219_HEIGHT][MAX7219_MAX_DEVICES * 8];
+    bool flip;
 } max7219_t;
 
 esp_err_t max7219_init(max7219_t *dev, const max7219_config_t *config);
@@ -51,6 +52,7 @@ esp_err_t max7219_deinit(max7219_t *dev);
 
 esp_err_t max7219_clear(max7219_t *dev);
 esp_err_t max7219_refresh(max7219_t *dev);
+void max7219_set_flip(max7219_t *dev, bool flip);
 esp_err_t max7219_set_intensity(max7219_t *dev, uint8_t intensity);
 esp_err_t max7219_display_test(max7219_t *dev, bool enable);
 esp_err_t max7219_set_pixel(max7219_t *dev, int x, int y, bool on);
