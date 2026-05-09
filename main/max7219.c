@@ -421,21 +421,19 @@ esp_err_t max7219_set_pixel(max7219_t *dev, int x, int y, bool on)
 
 esp_err_t max7219_clear(max7219_t *dev)
 {
-    if (dev == NULL)
-    {
+    if (dev == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
 
     int width = dev->num_devices * 8;
-    for (int y = 0; y < 8; y++)
-    {
-        for (int x = 0; x < width; x++)
-        {
+
+    for (int y = 0; y < 8; y++) {
+        for (int x = 0; x < width; x++) {
             dev->buffer[y][x] = 0;
         }
     }
 
-    return max7219_refresh(dev);
+    return ESP_OK;
 }
 
 static const uint8_t *max7219_match_emoji_token(const char **text)

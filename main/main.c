@@ -472,6 +472,13 @@ void display_task(void *pv)
         {
             max7219_clear(display);
             max7219_draw_text(display, 0, time_copy);
+            if (!wifi_is_connected() && ((xTaskGetTickCount() / pdMS_TO_TICKS(500)) % 2))
+            {
+                max7219_set_pixel(display, 30, 0, true); //WIFI disconnect indicator
+                max7219_set_pixel(display, 31, 0, true);
+                max7219_set_pixel(display, 30, 1, true);
+                max7219_set_pixel(display, 31, 1, true);
+            }
             max7219_refresh(display);
             vTaskDelay(pdMS_TO_TICKS(250));
         }
@@ -511,54 +518,79 @@ void app_main(void)
     g_state_mutex = xSemaphoreCreateMutex();
 
     ESP_ERROR_CHECK(max7219_init(&g_display, &cfg));
-    max7219_set_flip(&g_display, false);   // upside down
+    max7219_set_flip(&g_display, false); // upside down
     ESP_LOGI(TAG, "Driver test starting");
 
     // 2. Init WiFi
     wifi_init();
 
     // 3. Check if credentials exist in NVS
-    char ssid[64], pass[64];
-    if (nvs_load_credentials(ssid, sizeof(ssid), pass, sizeof(pass)))
+    // char ssid[64], pass[64];
+    // if (nvs_load_credentials(ssid, sizeof(ssid), pass, sizeof(pass)))
+    // {
+    //     ESP_LOGI(TAG, "Found saved credentials for: %s", ssid);
+    //     wifi_connect_sta(ssid, pass);
+
+    //     // Wait for result (10 seconds)
+    //     if (wifi_wait_connected(10000))
+    //     {
+    //         ESP_LOGI(TAG, "Connected! No need for AP setup.");
+
+    //         time_sync_init();
+
+    //         // Init shared state
+    //         memset(&g_state, 0, sizeof(g_state));
+    //         g_state.server_cfg.show_clock = true;
+    //         g_state.server_cfg.brightness = 5;
+    //         g_state.server_cfg.scroll_speed_ms = 60;
+    //         strcpy(g_state.current_time, "--:--");
+
+    //         // Create tasks
+    //         xTaskCreate(clock_task, "clock_task", 2048, NULL, 5, NULL);
+    //         xTaskCreate(fetch_task, "fetch_task", 6144, NULL, 5, NULL);
+    //         xTaskCreate(heartbeat_task, "heartbeat_task", 4096, NULL, 5, NULL);
+    //         xTaskCreate(display_task, "display_task", 4096, &g_display, 5, NULL);
+
+    //         vTaskDelete(NULL); // optional but clean
+    //     }
+
+    //     ESP_LOGW(TAG, "Saved credentials failed. Starting config AP...");
+    // }
+    // else
+    // {
+    //     // max7219_scroll_text(&display, "Connect to AP for WIFI setup", 30);
+    //     ESP_LOGI(TAG, "No credentials found. Starting config AP...");
+    // }
+
+    if (wifi_connect_saved_networks(10000))
     {
-        ESP_LOGI(TAG, "Found saved credentials for: %s", ssid);
-        wifi_connect_sta(ssid, pass);
+        ESP_LOGI(TAG, "Connected to one saved WiFi.");
+        buzzer_play_pattern(&g_buzzer, BUZZER_TONE_WIFI_CONNECTED);
+        time_sync_init();
 
-        // Wait for result (10 seconds)
-        if (wifi_wait_connected(10000))
-        {
-            ESP_LOGI(TAG, "Connected! No need for AP setup.");
+        memset(&g_state, 0, sizeof(g_state));
 
-            time_sync_init();
+        g_state.server_cfg.show_clock = true;
+        g_state.server_cfg.brightness = 5;
+        g_state.server_cfg.scroll_speed_ms = 60;
 
-            // Init shared state
-            memset(&g_state, 0, sizeof(g_state));
-            g_state.server_cfg.show_clock = true;
-            g_state.server_cfg.brightness = 5;
-            g_state.server_cfg.scroll_speed_ms = 60;
-            strcpy(g_state.current_time, "--:--");
-
-            // Create tasks
-            xTaskCreate(clock_task, "clock_task", 2048, NULL, 5, NULL);
-            xTaskCreate(fetch_task, "fetch_task", 6144, NULL, 5, NULL);
-            xTaskCreate(heartbeat_task, "heartbeat_task", 4096, NULL, 5, NULL);
-            xTaskCreate(display_task, "display_task", 4096, &g_display, 5, NULL);
-
-            vTaskDelete(NULL); // optional but clean
-        }
-
-        ESP_LOGW(TAG, "Saved credentials failed. Starting config AP...");
+        strcpy(g_state.current_time, "--:--");
+        xTaskCreate(clock_task, "clock_task", 2048, NULL, 5, NULL);
+        xTaskCreate(fetch_task, "fetch_task", 6144, NULL, 5, NULL);
+        xTaskCreate(heartbeat_task, "heartbeat_task", 4096, NULL, 5, NULL);
+        xTaskCreate(display_task, "display_task", 4096, &g_display, 5, NULL);
+        vTaskDelete(NULL);
     }
     else
     {
-        // max7219_scroll_text(&display, "Connect to AP for WIFI setup", 30);
-        ESP_LOGI(TAG, "No credentials found. Starting config AP...");
+        buzzer_play_pattern(&g_buzzer, BUZZER_TONE_WIFI_FAILED);
     }
 
+    ESP_LOGW(TAG, "No saved WiFi worked. Starting config portal...");
     // 4. Start webserver for configuration
     portal_start();
 
-    ESP_LOGI(TAG, "Connect to 'Matrix_Config_AP' (pw: 12345678)");
+    ESP_LOGI(TAG, "Connect to 'Matrix_Config_AP'");
     ESP_LOGI(TAG, "Then open http://192.168.4.1 in your browser");
 
     while (!wifi_is_connected())

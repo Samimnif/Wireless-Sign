@@ -142,3 +142,81 @@ esp_err_t buzzer_deinit(buzzer_t *buzzer)
     buzzer->initialized = false;
     return ESP_OK;
 }
+
+static esp_err_t play_note(buzzer_t *bz, int freq, int duration_ms)
+{
+    ESP_ERROR_CHECK(buzzer_play_tone(bz, freq, duration_ms));
+    vTaskDelay(pdMS_TO_TICKS(30));
+    return ESP_OK;
+}
+
+esp_err_t buzzer_play_pattern(buzzer_t *bz, buzzer_tone_t tone)
+{
+    if (bz == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    switch (tone)
+    {
+        case BUZZER_TONE_SUCCESS:
+            play_note(bz, 800, 120);
+            play_note(bz, 1200, 150);
+            break;
+
+        case BUZZER_TONE_ERROR:
+            play_note(bz, 1200, 150);
+            play_note(bz, 500, 250);
+            break;
+
+        case BUZZER_TONE_WARNING:
+            play_note(bz, 1000, 100);
+            play_note(bz, 1000, 100);
+            play_note(bz, 1000, 100);
+            break;
+
+        case BUZZER_TONE_BOOT:
+            play_note(bz, 500, 100);
+            play_note(bz, 800, 100);
+            play_note(bz, 1200, 150);
+            break;
+
+        case BUZZER_TONE_WIFI_CONNECTED:
+            play_note(bz, 900, 80);
+            play_note(bz, 1300, 120);
+            break;
+
+        case BUZZER_TONE_WIFI_FAILED:
+            play_note(bz, 700, 150);
+            play_note(bz, 400, 250);
+            break;
+
+        case BUZZER_TONE_MESSAGE:
+            play_note(bz, 1400, 120);
+            break;
+
+        case BUZZER_TONE_NOTIFICATION:
+        default:
+            play_note(bz, 1000, 100);
+            break;
+    }
+
+    return ESP_OK;
+}
+
+esp_err_t buzzer_play_custom(
+    buzzer_t *bz,
+    const int *freqs,
+    const int *durations,
+    int count)
+{
+    if (!bz || !freqs || !durations || count <= 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    for (int i = 0; i < count; i++) {
+        buzzer_play_tone(bz, freqs[i], durations[i]);
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+
+    return ESP_OK;
+}

@@ -10,6 +10,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 
+#define WIFI_MAX_SAVED_NETWORKS 5
 #define MAX_RETRIES 5
 static int retry_count = 0;
 
@@ -25,6 +26,7 @@ static void event_handler(void *arg, esp_event_base_t event_base,
 {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED)
     {
+        xEventGroupClearBits(wifi_events, WIFI_CONNECTED_BIT);
         if (retry_count < MAX_RETRIES)
         {
             esp_wifi_connect();
@@ -79,10 +81,10 @@ void wifi_init(void)
             .ssid = "Matrix_Config_AP",
             .ssid_len = strlen("Matrix_Config_AP"),
             .channel = 1,
-            .password = "", //keep it open 12345678
+            .password = "", // keep it open 12345678
             .max_connection = 2,
             .ssid_hidden = 0,
-            .authmode = WIFI_AUTH_OPEN, //WIFI_AUTH_WPA2_PSK,
+            .authmode = WIFI_AUTH_OPEN, // WIFI_AUTH_WPA2_PSK,
             .pmf_cfg = {
                 .required = true,
             },
@@ -114,15 +116,20 @@ void wifi_connect_sta(const char *ssid, const char *pass)
 }
 
 // ─── NVS: Save credentials ───────────────────────────────────────
+// void nvs_save_credentials(const char *ssid, const char *pass)
+// {
+//     nvs_handle_t handle;
+//     ESP_ERROR_CHECK(nvs_open("wifi_creds", NVS_READWRITE, &handle));
+//     ESP_ERROR_CHECK(nvs_set_str(handle, "ssid", ssid));
+//     ESP_ERROR_CHECK(nvs_set_str(handle, "pass", pass));
+//     ESP_ERROR_CHECK(nvs_commit(handle));
+//     nvs_close(handle);
+//     ESP_LOGI(TAG, "Credentials saved to NVS");
+// }
+
 void nvs_save_credentials(const char *ssid, const char *pass)
 {
-    nvs_handle_t handle;
-    ESP_ERROR_CHECK(nvs_open("wifi_creds", NVS_READWRITE, &handle));
-    ESP_ERROR_CHECK(nvs_set_str(handle, "ssid", ssid));
-    ESP_ERROR_CHECK(nvs_set_str(handle, "pass", pass));
-    ESP_ERROR_CHECK(nvs_commit(handle));
-    nvs_close(handle);
-    ESP_LOGI(TAG, "Credentials saved to NVS");
+    nvs_add_credentials(ssid, pass);
 }
 
 // ─── NVS: Load credentials ───────────────────────────────────────
@@ -139,6 +146,159 @@ bool nvs_load_credentials(char *ssid, size_t ssid_size, char *pass, size_t pass_
 
     nvs_close(handle);
     return ok;
+}
+
+int nvs_get_credentials_count(void)
+{
+    nvs_handle_t handle;
+    int32_t count = 0;
+
+    if (nvs_open("wifi_creds", NVS_READONLY, &handle) != ESP_OK)
+    {
+        return 0;
+    }
+
+    nvs_get_i32(handle, "count", &count);
+    nvs_close(handle);
+
+    if (count < 0)
+        count = 0;
+    if (count > WIFI_MAX_SAVED_NETWORKS)
+        count = WIFI_MAX_SAVED_NETWORKS;
+
+    return count;
+}
+
+bool nvs_load_credentials_at(int index, char *ssid, size_t ssid_size, char *pass, size_t pass_size)
+{
+    if (index < 0 || index >= WIFI_MAX_SAVED_NETWORKS)
+    {
+        return false;
+    }
+
+    nvs_handle_t handle;
+    if (nvs_open("wifi_creds", NVS_READONLY, &handle) != ESP_OK)
+    {
+        return false;
+    }
+
+    char ssid_key[24];
+    char pass_key[24];
+
+    snprintf(ssid_key, sizeof(ssid_key), "ssid_%d", index);
+    snprintf(pass_key, sizeof(pass_key), "pass_%d", index);
+
+    bool ok =
+        nvs_get_str(handle, ssid_key, ssid, &ssid_size) == ESP_OK &&
+        nvs_get_str(handle, pass_key, pass, &pass_size) == ESP_OK &&
+        strlen(ssid) > 0;
+
+    nvs_close(handle);
+    return ok;
+}
+
+bool nvs_add_credentials(const char *ssid, const char *pass)
+{
+    if (ssid == NULL || strlen(ssid) == 0)
+    {
+        return false;
+    }
+
+    nvs_handle_t handle;
+    if (nvs_open("wifi_creds", NVS_READWRITE, &handle) != ESP_OK)
+    {
+        return false;
+    }
+
+    int32_t count = 0;
+    nvs_get_i32(handle, "count", &count);
+
+    if (count < 0)
+        count = 0;
+    if (count > WIFI_MAX_SAVED_NETWORKS)
+        count = WIFI_MAX_SAVED_NETWORKS;
+
+    for (int i = 0; i < count; i++)
+    {
+        char existing_ssid[64];
+
+        size_t ssid_size = sizeof(existing_ssid);
+
+        char ssid_key[24];
+        char pass_key[24];
+
+        snprintf(ssid_key, sizeof(ssid_key), "ssid_%d", i);
+        snprintf(pass_key, sizeof(pass_key), "pass_%d", i);
+
+        if (nvs_get_str(handle, ssid_key, existing_ssid, &ssid_size) == ESP_OK &&
+            strcmp(existing_ssid, ssid) == 0)
+        {
+            nvs_set_str(handle, pass_key, pass ? pass : "");
+            nvs_commit(handle);
+            nvs_close(handle);
+            ESP_LOGI(TAG, "Updated saved WiFi: %s", ssid);
+            return true;
+        }
+    }
+
+    int index = count;
+
+    if (count >= WIFI_MAX_SAVED_NETWORKS)
+    {
+        index = 0; // overwrite oldest/simple first slot
+    }
+    else
+    {
+        count++;
+    }
+
+    char ssid_key[24];
+    char pass_key[24];
+
+    snprintf(ssid_key, sizeof(ssid_key), "ssid_%d", index);
+    snprintf(pass_key, sizeof(pass_key), "pass_%d", index);
+
+    nvs_set_str(handle, ssid_key, ssid);
+    nvs_set_str(handle, pass_key, pass ? pass : "");
+    nvs_set_i32(handle, "count", count);
+    nvs_commit(handle);
+    nvs_close(handle);
+
+    ESP_LOGI(TAG, "Saved WiFi network %d: %s", index, ssid);
+    return true;
+}
+
+bool wifi_connect_saved_networks(uint32_t timeout_per_network_ms)
+{
+    int count = nvs_get_credentials_count();
+
+    for (int i = 0; i < count; i++)
+    {
+        char ssid[64];
+        char pass[64];
+
+        if (!nvs_load_credentials_at(i, ssid, sizeof(ssid), pass, sizeof(pass)))
+        {
+            continue;
+        }
+
+        ESP_LOGI(TAG, "Trying saved WiFi %d/%d: %s", i + 1, count, ssid);
+
+        xEventGroupClearBits(wifi_events, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
+        wifi_connect_sta(ssid, pass);
+
+        if (wifi_wait_connected(timeout_per_network_ms))
+        {
+            ESP_LOGI(TAG, "Connected to saved WiFi: %s", ssid);
+            return true;
+        }
+
+        ESP_LOGW(TAG, "Could not connect to: %s", ssid);
+        esp_wifi_disconnect();
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+
+    return false;
 }
 
 bool wifi_wait_connected(uint32_t timeout_ms)

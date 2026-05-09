@@ -18,6 +18,28 @@ typedef struct {
     bool initialized;
 } buzzer_t;
 
+typedef enum
+{
+    BUZZER_TONE_NOTIFICATION,
+    BUZZER_TONE_SUCCESS,
+    BUZZER_TONE_ERROR,
+    BUZZER_TONE_WARNING,
+    BUZZER_TONE_BOOT,
+    BUZZER_TONE_WIFI_CONNECTED,
+    BUZZER_TONE_WIFI_FAILED,
+    BUZZER_TONE_MESSAGE,
+    BUZZER_TONE_CUSTOM
+} buzzer_tone_t;
+
+esp_err_t buzzer_play_pattern(buzzer_t *bz, buzzer_tone_t tone);
+
+esp_err_t buzzer_play_custom(
+    buzzer_t *bz,
+    const int *freqs,
+    const int *durations,
+    int count
+);
+
 /**
  * Initialize buzzer driver.
  */
