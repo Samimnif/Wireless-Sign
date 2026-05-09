@@ -9,16 +9,29 @@
 #include "nvs.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
+#include "esp_timer.h"
 
 #define WIFI_MAX_SAVED_NETWORKS 5
 #define MAX_RETRIES 5
 static int retry_count = 0;
-
+static esp_timer_handle_t reconnect_timer;
 static const char *TAG = "WIFI";
 
 static EventGroupHandle_t wifi_events;
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT BIT1
+
+static void reconnect_timer_cb(void *arg)
+{
+    ESP_LOGI(TAG, "Retry window reset. Trying WiFi again.");
+
+    retry_count = 0;
+
+    xEventGroupClearBits(wifi_events, WIFI_FAIL_BIT);
+
+    esp_wifi_disconnect();
+    esp_wifi_connect();
+}
 
 // ─── WiFi Event Handler ──────────────────────────────────────────
 static void event_handler(void *arg, esp_event_base_t event_base,
@@ -36,7 +49,8 @@ static void event_handler(void *arg, esp_event_base_t event_base,
         else
         {
             xEventGroupSetBits(wifi_events, WIFI_FAIL_BIT);
-            ESP_LOGE(TAG, "Failed to connect after %d retries", MAX_RETRIES);
+            ESP_LOGE(TAG, "Failed to connect after %d retries. Will retry later.", MAX_RETRIES);
+            esp_timer_start_once(reconnect_timer, 30000000);
         }
     }
     else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP)
@@ -100,6 +114,12 @@ void wifi_init(void)
     ESP_LOGI(TAG, "AP SSID: %s", ap_check.ap.ssid);
     ESP_LOGI(TAG, "AP Channel: %d", ap_check.ap.channel);
     ESP_LOGI(TAG, "AP Auth: %d", ap_check.ap.authmode);
+
+    esp_timer_create_args_t timer_args = {
+        .callback = reconnect_timer_cb,
+        .name = "wifi_reconnect_timer"};
+
+    ESP_ERROR_CHECK(esp_timer_create(&timer_args, &reconnect_timer));
 }
 
 // ─── Connect to STA with given credentials ───────────────────────
