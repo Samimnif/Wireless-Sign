@@ -25,13 +25,15 @@ bool time_is_valid(void)
 
 void time_sync_init(void)
 {
-    if (!sntp_initialized) {
+    if (!sntp_initialized)
+    {
         esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
         esp_netif_sntp_init(&config);
         sntp_initialized = true;
     }
 
-    if (esp_netif_sntp_sync_wait(pdMS_TO_TICKS(10000)) != ESP_OK) {
+    if (esp_netif_sntp_sync_wait(pdMS_TO_TICKS(10000)) != ESP_OK)
+    {
         ESP_LOGW(TAG, "SNTP sync timeout");
     }
 
@@ -41,11 +43,13 @@ void time_sync_init(void)
 
 bool get_current_time_string(char *out, size_t out_size)
 {
-    if (out == NULL || out_size == 0) {
+    if (out == NULL || out_size == 0)
+    {
         return false;
     }
 
-    if (!time_is_valid()) {
+    if (!time_is_valid())
+    {
         snprintf(out, out_size, "Time not set");
         return false;
     }
@@ -67,41 +71,66 @@ time_t get_current_unix_time(void)
     return now;
 }
 
-bool get_current_hhmm(char *out, size_t out_size)
-{
-    if (out == NULL || out_size == 0) {
-        return false;
-    }
-
-    if (!time_is_valid()) {
-        snprintf(out, out_size, "--:--");
-        return false;
-    }
-
-    time_t now;
-    struct tm timeinfo;
-
-    time(&now);
-    localtime_r(&now, &timeinfo);
-
-    strftime(out, out_size, "%H:%M", &timeinfo);
-    return true;
-}
-
-// bool get_current_hhmm_offset(char *out, size_t out_size, int utc_offset_hours, bool use_24h)
+// bool get_current_hhmm(char *out, size_t out_size)
 // {
 //     if (out == NULL || out_size == 0) {
 //         return false;
 //     }
 
+//     if (!time_is_valid()) {
+//         snprintf(out, out_size, "--:--");
+//         return false;
+//     }
+
 //     time_t now;
-//     time(&now);
-
-//     now += utc_offset_hours * 3600;
-
 //     struct tm timeinfo;
-//     gmtime_r(&now, &timeinfo);
 
-//     strftime(out, out_size, use_24h ? "%H:%M" : "%I:%M", &timeinfo);
+//     time(&now);
+//     localtime_r(&now, &timeinfo);
+
+//     strftime(out, out_size, "%H:%M", &timeinfo);
 //     return true;
 // }
+
+bool get_current_hhmm(char *buf,
+                      size_t len,
+                      int utc_offset_hours,
+                      bool use_24h)
+{
+    if (buf == NULL || len < 6)
+    {
+        return false;
+    }
+
+    time_t now;
+    time(&now);
+
+    // Apply UTC offset
+    now += (utc_offset_hours * 3600);
+
+    struct tm timeinfo;
+    gmtime_r(&now, &timeinfo);
+
+    if (use_24h)
+    {
+        snprintf(buf, len, "%02d:%02d",
+                 timeinfo.tm_hour,
+                 timeinfo.tm_min);
+    }
+    else
+    {
+        int hour12 = timeinfo.tm_hour % 12;
+
+        if (hour12 == 0)
+        {
+            hour12 = 12;
+        }
+
+        snprintf(buf, len, "%02d:%02d%s",
+                 hour12,
+                 timeinfo.tm_min,
+                 (timeinfo.tm_hour >= 12) ? "PM" : "AM");
+    }
+
+    return true;
+}

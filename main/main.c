@@ -441,7 +441,17 @@ void clock_task(void *pv)
     {
         char buf[6];
 
-        if (get_current_hhmm(buf, sizeof(buf)))
+        int utc_offset = 0;
+        bool time_format_24h = true;
+
+        if (xSemaphoreTake(g_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE)
+        {
+            utc_offset = g_state.server_cfg.utc_offset_hours;
+            time_format_24h = g_state.server_cfg.time_format_24h;
+            xSemaphoreGive(g_state_mutex);
+        }
+
+        if (get_current_hhmm(buf, sizeof(buf), utc_offset, time_format_24h))
         {
             if (xSemaphoreTake(g_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE)
             {
@@ -502,8 +512,8 @@ void display_task(void *pv)
     int message_seconds = 15;
 
     int scroll_speed_ms = 60;
-    int utc_offset_hours = 0;
-    bool time_format_24h = true;
+    //int utc_offset_hours = 0;
+    //bool time_format_24h = true;
     bool flip_display = false;
 
     char time_copy[6] = "--:--";
@@ -534,8 +544,8 @@ void display_task(void *pv)
             message_id = g_state.server_cfg.message_id;
 
             scroll_speed_ms = g_state.server_cfg.scroll_speed_ms;
-            utc_offset_hours = g_state.server_cfg.utc_offset_hours;
-            time_format_24h = g_state.server_cfg.time_format_24h;
+            //utc_offset_hours = g_state.server_cfg.utc_offset_hours;
+            //time_format_24h = g_state.server_cfg.time_format_24h;
             flip_display = g_state.server_cfg.flip_display;
             strncpy(message_mode, g_state.server_cfg.message_mode, sizeof(message_mode) - 1);
             message_mode[sizeof(message_mode) - 1] = '\0';
