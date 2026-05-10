@@ -57,6 +57,7 @@ typedef struct
 typedef struct
 {
     char current_time[6];
+    bool is_pm;
     server_config_t server_cfg;
 } app_state_t;
 
@@ -443,6 +444,7 @@ void clock_task(void *pv)
 
         int utc_offset = 0;
         bool time_format_24h = true;
+        bool is_pm = false;
 
         if (xSemaphoreTake(g_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE)
         {
@@ -451,11 +453,12 @@ void clock_task(void *pv)
             xSemaphoreGive(g_state_mutex);
         }
 
-        if (get_current_hhmm(buf, sizeof(buf), utc_offset, time_format_24h))
+        if (get_current_hhmm(buf, sizeof(buf), utc_offset, time_format_24h, &is_pm))
         {
             if (xSemaphoreTake(g_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE)
             {
                 strcpy(g_state.current_time, buf);
+                g_state.is_pm = is_pm;
                 xSemaphoreGive(g_state_mutex);
             }
         }
@@ -512,8 +515,9 @@ void display_task(void *pv)
     int message_seconds = 15;
 
     int scroll_speed_ms = 60;
-    //int utc_offset_hours = 0;
-    //bool time_format_24h = true;
+    // int utc_offset_hours = 0;
+    bool time_format_24h = true;
+    bool is_pm;
     bool flip_display = false;
 
     char time_copy[6] = "--:--";
@@ -544,8 +548,9 @@ void display_task(void *pv)
             message_id = g_state.server_cfg.message_id;
 
             scroll_speed_ms = g_state.server_cfg.scroll_speed_ms;
-            //utc_offset_hours = g_state.server_cfg.utc_offset_hours;
-            //time_format_24h = g_state.server_cfg.time_format_24h;
+            // utc_offset_hours = g_state.server_cfg.utc_offset_hours;
+            time_format_24h = g_state.server_cfg.time_format_24h;
+            is_pm = g_state.is_pm;
             flip_display = g_state.server_cfg.flip_display;
             strncpy(message_mode, g_state.server_cfg.message_mode, sizeof(message_mode) - 1);
             message_mode[sizeof(message_mode) - 1] = '\0';
@@ -619,6 +624,31 @@ void display_task(void *pv)
                 max7219_set_pixel(display, 31, 0, true);
                 max7219_set_pixel(display, 30, 1, true);
                 max7219_set_pixel(display, 31, 1, true);
+            }
+            if (!time_format_24h && is_pm)
+            { // small P
+                max7219_set_pixel(display, 29, 4, true);
+                max7219_set_pixel(display, 29, 5, true);
+                max7219_set_pixel(display, 29, 6, true);
+                max7219_set_pixel(display, 29, 7, true);
+                max7219_set_pixel(display, 30, 4, true);
+                max7219_set_pixel(display, 31, 4, true);
+                max7219_set_pixel(display, 31, 5, true);
+                max7219_set_pixel(display, 31, 6, true);
+                max7219_set_pixel(display, 30, 6, true);
+            }
+            else if (!time_format_24h)
+            { //small A
+                max7219_set_pixel(display, 29, 4, true);
+                max7219_set_pixel(display, 29, 5, true);
+                max7219_set_pixel(display, 29, 6, true);
+                max7219_set_pixel(display, 29, 7, true);
+                max7219_set_pixel(display, 30, 4, true);
+                max7219_set_pixel(display, 31, 4, true);
+                max7219_set_pixel(display, 31, 5, true);
+                max7219_set_pixel(display, 31, 6, true);
+                max7219_set_pixel(display, 30, 6, true);
+                max7219_set_pixel(display, 31, 7, true);
             }
             max7219_refresh(display);
             vTaskDelay(pdMS_TO_TICKS(250));

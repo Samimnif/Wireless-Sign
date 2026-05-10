@@ -95,7 +95,8 @@ time_t get_current_unix_time(void)
 bool get_current_hhmm(char *buf,
                       size_t len,
                       int utc_offset_hours,
-                      bool use_24h)
+                      bool use_24h,
+                      bool *is_pm_out)
 {
     if (buf == NULL || len < 6)
     {
@@ -104,12 +105,15 @@ bool get_current_hhmm(char *buf,
 
     time_t now;
     time(&now);
-
-    // Apply UTC offset
     now += (utc_offset_hours * 3600);
 
     struct tm timeinfo;
     gmtime_r(&now, &timeinfo);
+
+    if (is_pm_out)
+    {
+        *is_pm_out = timeinfo.tm_hour >= 12;
+    }
 
     if (use_24h)
     {
@@ -120,16 +124,11 @@ bool get_current_hhmm(char *buf,
     else
     {
         int hour12 = timeinfo.tm_hour % 12;
+        if (hour12 == 0) hour12 = 12;
 
-        if (hour12 == 0)
-        {
-            hour12 = 12;
-        }
-
-        snprintf(buf, len, "%02d:%02d%s",
+        snprintf(buf, len, "%02d:%02d",
                  hour12,
-                 timeinfo.tm_min,
-                 (timeinfo.tm_hour >= 12) ? "PM" : "AM");
+                 timeinfo.tm_min);
     }
 
     return true;
