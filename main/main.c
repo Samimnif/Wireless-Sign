@@ -34,21 +34,24 @@ typedef struct
 {
     char message[128];
     bool has_message;
-
     int brightness;
     bool show_clock;
 
     int message_id;
     int message_seconds;
-
     char message_mode[16];
 
     int utc_offset_hours;
     bool time_format_24h;
 
     bool flip_display;
-
     int scroll_speed_ms;
+
+    bool sound_enabled;
+    char sound_mode[16];
+
+    char tone_command[16];
+    int tone_id;
 } server_config_t;
 
 typedef struct
@@ -70,6 +73,41 @@ void make_device_id(char *out, size_t out_size)
     snprintf(out, out_size,
              "matrix-%02X%02X%02X%02X%02X%02X",
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+}
+
+static void play_named_tone(const char *tone)
+{
+    if (tone == NULL)
+        return;
+
+    if (strcmp(tone, "success") == 0)
+    {
+        buzzer_play_pattern(&g_buzzer, BUZZER_TONE_SUCCESS);
+    }
+    else if (strcmp(tone, "error") == 0)
+    {
+        buzzer_play_pattern(&g_buzzer, BUZZER_TONE_ERROR);
+    }
+    else if (strcmp(tone, "warning") == 0)
+    {
+        buzzer_play_pattern(&g_buzzer, BUZZER_TONE_WARNING);
+    }
+    else if (strcmp(tone, "boot") == 0)
+    {
+        buzzer_play_pattern(&g_buzzer, BUZZER_TONE_BOOT);
+    }
+    else if (strcmp(tone, "wifi") == 0)
+    {
+        buzzer_play_pattern(&g_buzzer, BUZZER_TONE_WIFI_CONNECTED);
+    }
+    else if (strcmp(tone, "message") == 0)
+    {
+        buzzer_play_pattern(&g_buzzer, BUZZER_TONE_MESSAGE);
+    }
+    else
+    {
+        buzzer_play_pattern(&g_buzzer, BUZZER_TONE_NOTIFICATION);
+    }
 }
 
 esp_err_t fetch_server_json(const char *url, char *out_buf, size_t out_buf_size)
@@ -237,6 +275,34 @@ esp_err_t ack_message(int message_id)
     return err;
 }
 
+esp_err_t ack_tone(int tone_id)
+{
+    char url[256];
+    snprintf(url, sizeof(url), "%s/api/device/%s/tone_ack",
+             g_server_url, g_device_id);
+
+    char post_data[64];
+    snprintf(post_data, sizeof(post_data),
+             "{\"tone_id\":%d}", tone_id);
+
+    esp_http_client_config_t config = {
+        .url = url,
+        .method = HTTP_METHOD_POST,
+        .timeout_ms = 5000,
+    };
+
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    if (!client)
+        return ESP_FAIL;
+
+    esp_http_client_set_header(client, "Content-Type", "application/json");
+    esp_http_client_set_post_field(client, post_data, strlen(post_data));
+
+    esp_err_t err = esp_http_client_perform(client);
+    esp_http_client_cleanup(client);
+    return err;
+}
+
 bool parse_server_config_json(const char *json_str, server_config_t *cfg)
 {
     if (json_str == NULL || cfg == NULL)
@@ -269,6 +335,10 @@ bool parse_server_config_json(const char *json_str, server_config_t *cfg)
     cJSON *time_format_24h = cJSON_GetObjectItem(root, "time_format_24h");
     cJSON *scroll_speed_ms = cJSON_GetObjectItem(root, "scroll_speed_ms");
     cJSON *flip_display = cJSON_GetObjectItem(root, "flip_display");
+    cJSON *sound_enabled = cJSON_GetObjectItem(root, "sound_enabled");
+    cJSON *sound_mode = cJSON_GetObjectItem(root, "sound_mode");
+    cJSON *tone_command = cJSON_GetObjectItem(root, "tone_command");
+    cJSON *tone_id = cJSON_GetObjectItem(root, "tone_id");
 
     if (cJSON_IsString(message) && message->valuestring != NULL)
     {
@@ -293,6 +363,30 @@ bool parse_server_config_json(const char *json_str, server_config_t *cfg)
     cfg->time_format_24h = cJSON_IsBool(time_format_24h) ? cJSON_IsTrue(time_format_24h) : true;
     cfg->scroll_speed_ms = cJSON_IsNumber(scroll_speed_ms) ? scroll_speed_ms->valueint : 60;
     cfg->flip_display = cJSON_IsBool(flip_display) ? cJSON_IsTrue(flip_display) : false;
+
+    cfg->sound_enabled = cJSON_IsBool(sound_enabled) ? cJSON_IsTrue(sound_enabled) : true;
+
+    if (cJSON_IsString(sound_mode) && sound_mode->valuestring)
+    {
+        strncpy(cfg->sound_mode, sound_mode->valuestring, sizeof(cfg->sound_mode) - 1);
+        cfg->sound_mode[sizeof(cfg->sound_mode) - 1] = '\0';
+    }
+    else
+    {
+        strcpy(cfg->sound_mode, "message");
+    }
+
+    cfg->tone_id = cJSON_IsNumber(tone_id) ? tone_id->valueint : 0;
+
+    if (cJSON_IsString(tone_command) && tone_command->valuestring)
+    {
+        strncpy(cfg->tone_command, tone_command->valuestring, sizeof(cfg->tone_command) - 1);
+        cfg->tone_command[sizeof(cfg->tone_command) - 1] = '\0';
+    }
+    else
+    {
+        cfg->tone_command[0] = '\0';
+    }
 
     strcpy(cfg->message_mode, "scroll");
 
@@ -321,6 +415,16 @@ void update_shared_server_config(const server_config_t *cfg)
         g_state.server_cfg.time_format_24h = cfg->time_format_24h;
         g_state.server_cfg.scroll_speed_ms = cfg->scroll_speed_ms;
         g_state.server_cfg.flip_display = cfg->flip_display;
+        g_state.server_cfg.sound_enabled = cfg->sound_enabled;
+        g_state.server_cfg.tone_id = cfg->tone_id;
+
+        strncpy(g_state.server_cfg.sound_mode, cfg->sound_mode,
+                sizeof(g_state.server_cfg.sound_mode) - 1);
+        g_state.server_cfg.sound_mode[sizeof(g_state.server_cfg.sound_mode) - 1] = '\0';
+
+        strncpy(g_state.server_cfg.tone_command, cfg->tone_command,
+                sizeof(g_state.server_cfg.tone_command) - 1);
+        g_state.server_cfg.tone_command[sizeof(g_state.server_cfg.tone_command) - 1] = '\0';
 
         strncpy(g_state.server_cfg.message_mode,
                 cfg->message_mode,
@@ -408,6 +512,12 @@ void display_task(void *pv)
     int brightness = 5;
     bool show_clock = true;
 
+    bool sound_enabled = true;
+    char sound_mode[16] = "message";
+    bool tone_pending = false;
+    char tone_command[16] = "none";
+    int tone_id = 0;
+
     while (1)
     {
         if (xSemaphoreTake(g_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE)
@@ -430,14 +540,35 @@ void display_task(void *pv)
             strncpy(message_mode, g_state.server_cfg.message_mode, sizeof(message_mode) - 1);
             message_mode[sizeof(message_mode) - 1] = '\0';
             message_seconds = g_state.server_cfg.message_seconds;
+            sound_enabled = g_state.server_cfg.sound_enabled;
+            tone_id = g_state.server_cfg.tone_id;
+
+            strncpy(sound_mode, g_state.server_cfg.sound_mode, sizeof(sound_mode) - 1);
+            sound_mode[sizeof(sound_mode) - 1] = '\0';
+
+            strncpy(tone_command, g_state.server_cfg.tone_command, sizeof(tone_command) - 1);
+            tone_command[sizeof(tone_command) - 1] = '\0';
+
             xSemaphoreGive(g_state_mutex);
         }
 
         max7219_set_intensity(display, brightness);
         max7219_set_flip(display, flip_display);
 
-        ESP_LOGI(TAG, "display_task: time='%s' show_clock=%d brightness=%d has_message=%d",
-                 time_copy, show_clock, brightness, has_message);
+        ESP_LOGI(TAG, "display_task: time='%s' show_clock=%d brightness=%d has_message=%d tone_pending=%d sound_enabled=%d",
+                 time_copy, show_clock, brightness, has_message, tone_pending, sound_enabled);
+
+        static int last_played_tone_id = 0;
+
+        if (sound_enabled &&
+            tone_id > 0 &&
+            tone_id != last_played_tone_id &&
+            strlen(tone_command) > 0)
+        {
+            play_named_tone(tone_command);
+            ack_tone(tone_id);
+            last_played_tone_id = tone_id;
+        }
 
         if (has_message && strlen(message_copy) > 0)
         {
@@ -474,7 +605,7 @@ void display_task(void *pv)
             max7219_draw_text(display, 0, time_copy);
             if (!wifi_is_connected() && ((xTaskGetTickCount() / pdMS_TO_TICKS(500)) % 2))
             {
-                max7219_set_pixel(display, 30, 0, true); //WIFI disconnect indicator
+                max7219_set_pixel(display, 30, 0, true); // WIFI disconnect indicator
                 max7219_set_pixel(display, 31, 0, true);
                 max7219_set_pixel(display, 30, 1, true);
                 max7219_set_pixel(display, 31, 1, true);
@@ -520,6 +651,10 @@ void app_main(void)
     ESP_ERROR_CHECK(max7219_init(&g_display, &cfg));
     max7219_set_flip(&g_display, false); // upside down
     ESP_LOGI(TAG, "Driver test starting");
+    // LOGO - TBD
+    max7219_clear(&g_display);
+    max7219_draw_text(&g_display, 4, "_SM_");
+    max7219_refresh(&g_display);
 
     // 2. Init WiFi
     wifi_init();
