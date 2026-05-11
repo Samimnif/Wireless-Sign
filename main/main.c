@@ -21,14 +21,22 @@
 #include <sys/time.h>
 #include "esp_netif_sntp.h"
 #include "esp_mac.h"
+#include "esp_https_ota.h"
+#include "esp_ota_ops.h"
+#include "esp_system.h"
 
 #define SERVER_URL "http://samislab.tplinkdns.com:10300"
+#define FW_VERSION "1.0.1"
+#define JSON_BUF_SIZE 1024
 static const char *TAG = "MAIN";
 
 static char g_server_url[128] = SERVER_URL;
 static char g_device_id[32];
 
 static buzzer_t g_buzzer;
+
+static TaskHandle_t ota_anim_task_handle = NULL;
+static volatile bool ota_anim_running = false;
 
 typedef struct
 {
@@ -52,6 +60,10 @@ typedef struct
 
     char tone_command[16];
     int tone_id;
+
+    bool ota_available;
+    char ota_url[192];
+    char ota_version[32];
 } server_config_t;
 
 typedef struct
@@ -109,6 +121,95 @@ static void play_named_tone(const char *tone)
     {
         buzzer_play_pattern(&g_buzzer, BUZZER_TONE_NOTIFICATION);
     }
+}
+
+void ota_animation_task(void *pv)
+{
+    int frame = 0;
+
+    while (ota_anim_running)
+    {
+        max7219_clear(&g_display);
+
+        if (frame % 4 == 0)
+            max7219_draw_text(&g_display, 0, "OTA");
+        else if (frame % 4 == 1)
+            max7219_draw_text(&g_display, 0, "OTA.");
+        else if (frame % 4 == 2)
+            max7219_draw_text(&g_display, 0, "OTA..");
+        else
+            max7219_draw_text(&g_display, 0, "OTA...");
+
+        // moving bottom progress-style dot
+        int x = frame % 32;
+        max7219_set_pixel(&g_display, x, 7, true);
+
+        max7219_refresh(&g_display);
+
+        frame++;
+        vTaskDelay(pdMS_TO_TICKS(250));
+    }
+
+    vTaskDelete(NULL);
+}
+
+void ota_animation_start(void)
+{
+    if (ota_anim_task_handle != NULL)
+        return;
+
+    ota_anim_running = true;
+
+    xTaskCreate(
+        ota_animation_task,
+        "ota_anim",
+        2048,
+        NULL,
+        4,
+        &ota_anim_task_handle
+    );
+}
+
+void ota_animation_stop(void)
+{
+    ota_anim_running = false;
+    ota_anim_task_handle = NULL;
+}
+
+esp_err_t do_ota_update(const char *url)
+{
+    if (url == NULL || strlen(url) == 0)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    ESP_LOGW(TAG, "Starting OTA from: %s", url);
+
+    esp_http_client_config_t http_config = {
+        .url = url,
+        .timeout_ms = 15000,
+        .keep_alive_enable = true,
+    };
+
+    esp_https_ota_config_t ota_config = {
+        .http_config = &http_config,
+    };
+
+    ota_animation_start();
+    esp_err_t ret = esp_https_ota(&ota_config);
+    ota_animation_stop();
+
+    if (ret == ESP_OK)
+    {
+        ESP_LOGW(TAG, "OTA successful. Restarting...");
+        esp_restart();
+    }
+    else
+    {
+        ESP_LOGE(TAG, "OTA failed: %s", esp_err_to_name(ret));
+    }
+
+    return ret;
 }
 
 esp_err_t fetch_server_json(const char *url, char *out_buf, size_t out_buf_size)
@@ -199,10 +300,11 @@ esp_err_t send_heartbeat(void)
 
     char post_data[256];
     snprintf(post_data, sizeof(post_data),
-             "{\"device_id\":\"%s\",\"ip\":\"%s\",\"free_mem\":%u}",
+             "{\"device_id\":\"%s\",\"ip\":\"%s\",\"free_mem\":%u,\"fw_version\":\"%s\"}",
              g_device_id,
              "", // optional: fill in IP later
-             (unsigned)esp_get_free_heap_size());
+             (unsigned)esp_get_free_heap_size(),
+             FW_VERSION);
 
     esp_http_client_config_t config = {
         .url = url,
@@ -340,6 +442,9 @@ bool parse_server_config_json(const char *json_str, server_config_t *cfg)
     cJSON *sound_mode = cJSON_GetObjectItem(root, "sound_mode");
     cJSON *tone_command = cJSON_GetObjectItem(root, "tone_command");
     cJSON *tone_id = cJSON_GetObjectItem(root, "tone_id");
+    cJSON *ota_available = cJSON_GetObjectItem(root, "ota_available");
+    cJSON *ota_url = cJSON_GetObjectItem(root, "ota_url");
+    cJSON *ota_version = cJSON_GetObjectItem(root, "ota_version");
 
     if (cJSON_IsString(message) && message->valuestring != NULL)
     {
@@ -354,6 +459,27 @@ bool parse_server_config_json(const char *json_str, server_config_t *cfg)
     else
     {
         cfg->has_message = strlen(cfg->message) > 0;
+    }
+    cfg->ota_available = cJSON_IsBool(ota_available) ? cJSON_IsTrue(ota_available) : false;
+
+    if (cJSON_IsString(ota_url) && ota_url->valuestring)
+    {
+        strncpy(cfg->ota_url, ota_url->valuestring, sizeof(cfg->ota_url) - 1);
+        cfg->ota_url[sizeof(cfg->ota_url) - 1] = '\0';
+    }
+    else
+    {
+        cfg->ota_url[0] = '\0';
+    }
+
+    if (cJSON_IsString(ota_version) && ota_version->valuestring)
+    {
+        strncpy(cfg->ota_version, ota_version->valuestring, sizeof(cfg->ota_version) - 1);
+        cfg->ota_version[sizeof(cfg->ota_version) - 1] = '\0';
+    }
+    else
+    {
+        cfg->ota_version[0] = '\0';
     }
 
     cfg->brightness = cJSON_IsNumber(brightness) ? brightness->valueint : 5;
@@ -418,6 +544,15 @@ void update_shared_server_config(const server_config_t *cfg)
         g_state.server_cfg.flip_display = cfg->flip_display;
         g_state.server_cfg.sound_enabled = cfg->sound_enabled;
         g_state.server_cfg.tone_id = cfg->tone_id;
+        g_state.server_cfg.ota_available = cfg->ota_available;
+
+        strncpy(g_state.server_cfg.ota_url, cfg->ota_url,
+                sizeof(g_state.server_cfg.ota_url) - 1);
+        g_state.server_cfg.ota_url[sizeof(g_state.server_cfg.ota_url) - 1] = '\0';
+
+        strncpy(g_state.server_cfg.ota_version, cfg->ota_version,
+                sizeof(g_state.server_cfg.ota_version) - 1);
+        g_state.server_cfg.ota_version[sizeof(g_state.server_cfg.ota_version) - 1] = '\0';
 
         strncpy(g_state.server_cfg.sound_mode, cfg->sound_mode,
                 sizeof(g_state.server_cfg.sound_mode) - 1);
@@ -469,7 +604,7 @@ void clock_task(void *pv)
 
 void fetch_task(void *pv)
 {
-    char json_buf[512];
+    char json_buf[JSON_BUF_SIZE];
     char url[256];
 
     while (1)
@@ -532,6 +667,11 @@ void display_task(void *pv)
     char tone_command[16] = "none";
     int tone_id = 0;
 
+    static bool ota_attempted = false;
+    bool ota_available = false;
+    char ota_url[192] = "";
+    char ota_version[32] = "";
+
     while (1)
     {
         if (xSemaphoreTake(g_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE)
@@ -555,14 +695,19 @@ void display_task(void *pv)
             strncpy(message_mode, g_state.server_cfg.message_mode, sizeof(message_mode) - 1);
             message_mode[sizeof(message_mode) - 1] = '\0';
             message_seconds = g_state.server_cfg.message_seconds;
+
             sound_enabled = g_state.server_cfg.sound_enabled;
             tone_id = g_state.server_cfg.tone_id;
-
             strncpy(sound_mode, g_state.server_cfg.sound_mode, sizeof(sound_mode) - 1);
             sound_mode[sizeof(sound_mode) - 1] = '\0';
-
             strncpy(tone_command, g_state.server_cfg.tone_command, sizeof(tone_command) - 1);
             tone_command[sizeof(tone_command) - 1] = '\0';
+
+            ota_available = g_state.server_cfg.ota_available;
+            strncpy(ota_url, g_state.server_cfg.ota_url, sizeof(ota_url) - 1);
+            ota_url[sizeof(ota_url) - 1] = '\0';
+            strncpy(ota_version, g_state.server_cfg.ota_version, sizeof(ota_version) - 1);
+            ota_version[sizeof(ota_version) - 1] = '\0';
 
             xSemaphoreGive(g_state_mutex);
         }
@@ -572,6 +717,16 @@ void display_task(void *pv)
 
         ESP_LOGI(TAG, "display_task: time='%s' show_clock=%d brightness=%d has_message=%d tone_pending=%d sound_enabled=%d",
                  time_copy, show_clock, brightness, has_message, tone_pending, sound_enabled);
+
+        if (ota_available &&
+            !ota_attempted &&
+            strlen(ota_url) > 0 &&
+            strcmp(FW_VERSION, ota_version) != 0 &&
+            !has_message)
+        {
+            ota_attempted = true;
+            do_ota_update(ota_url);
+        }
 
         static int last_played_tone_id = 0;
 
@@ -638,7 +793,7 @@ void display_task(void *pv)
                 max7219_set_pixel(display, 30, 6, true);
             }
             else if (!time_format_24h)
-            { //small A
+            { // small A
                 max7219_set_pixel(display, 29, 4, true);
                 max7219_set_pixel(display, 29, 5, true);
                 max7219_set_pixel(display, 29, 6, true);
@@ -693,7 +848,8 @@ void app_main(void)
     ESP_LOGI(TAG, "Driver test starting");
     // LOGO - TBD
     max7219_clear(&g_display);
-    max7219_draw_text(&g_display, 4, "_SM_");
+    max7219_draw_text(&g_display, 0, FW_VERSION);
+    // max7219_draw_text(&g_display, 4, "_SM_");
     max7219_refresh(&g_display);
 
     // 2. Init WiFi
