@@ -61,18 +61,19 @@ CS	GPIO 7
 
 The project is split into modular components:
 
-File	Purpose
-main.c	Application logic, tasks, shared state
-wifi_manager.c	WiFi connection management
-portal.c	Captive portal and setup server
-time_manager.c	NTP synchronization and time formatting
-max7219.c	LED matrix driver
-buzzer.c	Piezo buzzer driver
+| File	| Purpose |
+|-------|---------|
+|main.c	| Application logic, tasks, shared state|
+|wifi_manager.c| 	WiFi connection management|
+|portal.c| 	Captive portal and setup server|
+|time_manager.c|	NTP synchronization and time formatting|
+|max7219.c|	LED matrix driver|
+|buzzer.c|	Piezo buzzer driver|
 
 ⸻
 
 ## Boot Flow
-
+```
 Boot
 │
 ├─ Load saved WiFi credentials from NVS
@@ -87,6 +88,7 @@ Boot
      ├─ User connects to AP
      ├─ User submits WiFi credentials
      └─ ESP32 restarts
+```
 
 ⸻
 
@@ -103,7 +105,7 @@ Supports:
 * Emoji rendering
 
 Example
-
+```json
 {
   "message": "Hello :heart:",
   "has_message": true,
@@ -111,6 +113,7 @@ Example
   "message_seconds": 10,
   "scroll_speed_ms": 60
 }
+```
 
 ⸻
 
@@ -130,10 +133,11 @@ Features:
 ### Display Flip
 
 The display can be flipped upside down remotely.
-
+```json
 {
   "flip_display": true
 }
+```
 
 Useful for:
 
@@ -158,11 +162,12 @@ Built-in Tones
 * notification
 
 Example
-
+```json
 {
   "tone_command": "success",
   "tone_id": 12
 }
+```
 
 ⸻
 
@@ -185,12 +190,13 @@ During OTA:
 * Device reboots automatically after success
 
 Example OTA JSON
-
+```json
 {
   "ota_available": true,
   "ota_version": "1.0.1",
   "ota_url": "http://server/static/firmware/matrix_ap.bin"
 }
+```
 
 ⸻
 
@@ -210,11 +216,12 @@ Features:
 ### Server API
 
 Fetch Device Configuration
-
+```
 GET /api/device/<device_id>/config
+```
 
 Example Response
-
+```json
 {
   "message": "Hello World",
   "has_message": true,
@@ -233,47 +240,52 @@ Example Response
   "ota_url": "",
   "ota_version": ""
 }
+```
 
 ⸻
 
 ### Message ACK
-
+```json
 POST /api/device/<device_id>/ack
 {
   "message_id": 12
 }
+```
 
 ⸻
 
 ### Tone ACK
-
+```json
 POST /api/device/<device_id>/tone_ack
 {
   "tone_id": 20
 }
+```
 
 ⸻
 
 ### Heartbeat
-
+```json
 POST /alive
 {
   "device_id": "matrix-XXXX",
   "free_mem": 123456,
   "fw_version": "1.0.0"
 }
+```
 
 ⸻
 
 ### FreeRTOS Tasks
 
-Task	Purpose
-clock_task	Updates current time
-fetch_task	Polls server configuration
-display_task	Controls matrix display
-heartbeat_task	Sends device heartbeat
-ota_animation_task	OTA animation while updating
-wifi_animation_task	WiFi setup animation
+|Task	|Purpose|
+|-------|-------|
+|clock_task|	Updates current time|
+|fetch_task|	Polls server configuration|
+|display_task|	Controls matrix display|
+|heartbeat_task|	Sends device heartbeat|
+|ota_animation_task|	OTA animation while updating|
+|wifi_animation_task|	WiFi setup animation|
 
 ⸻
 
@@ -297,9 +309,9 @@ The Flask dashboard supports:
 ### Device Identification
 
 Each device generates a unique ID from its MAC address:
-
+```
 matrix-XXXXXXXXXXXX
-
+```
 Used for:
 
 * API communication
@@ -314,33 +326,30 @@ Used for:
 1. Build Firmware
 
 Using ESP-IDF:
-
+```sh
 idf.py build
-
+```
 ⸻
 
 2. Flash Device
-
+```sh
 idf.py flash monitor
-
+```
 ⸻
 
 3. First Boot
 
 Connect to:
-
+```
 Matrix_Config_AP
-
-Password:
-
-12345678
+```
 
 ⸻
 
 4. Open Setup Portal
-
+```
 http://192.168.4.1
-
+```
 ⸻
 
 5. Enter WiFi Credentials
@@ -381,7 +390,7 @@ ota_1,app,ota_1,,1M
 * MQTT support instead of polling
 * Better emoji rendering
 * Mobile app
-* HTTPS OTA updates
+* HTTPS OTA updates <-- main one
 * Display zones
 * Audio playback
 * Power-saving modes
