@@ -1,0 +1,40 @@
+name: Build ESP-IDF Firmware
+
+on:
+  push:
+    branches: [ main, master ]
+    tags:
+      - 'v*' # Triggers when you push a tag like v1.0.0
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch: # Allows manual trigger from the GitHub Actions tab
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      # 1. Checkout your repository code (including submodules if any)
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      # 2. Build the project using Espressif's official CI action
+      - name: Build ESP-IDF Project
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.1  # Change this to match the ESP-IDF version your project uses (e.g., v4.4, v5.2, etc.)
+          target: esp32         # Change to esp32s2, esp32c3, etc., depending on your target chip
+          path: '.'             # Path to your project root
+
+      # 3. Upload the binaries so you can download them from the workflow run summary
+      - name: Upload Firmware Binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-binaries
+          path: |
+            build/*.bin
+            build/bootloader/bootloader.bin
+            build/partition_table/partition-table.bin
+            build/flasher_args.json
