@@ -26,7 +26,7 @@
 #include "esp_system.h"
 
 #define SERVER_URL "http://samislab.tplinkdns.com:10300"
-#define FW_VERSION "1.0.1"
+#define FW_VERSION "1.0.4"
 #define JSON_BUF_SIZE 1024
 static const char *TAG = "MAIN";
 
@@ -78,6 +78,154 @@ static SemaphoreHandle_t g_state_mutex;
 
 static max7219_t g_display;
 
+static void set_default_server_config(server_config_t *cfg)
+{
+    if (cfg == NULL)
+    {
+        return;
+    }
+
+    memset(cfg, 0, sizeof(*cfg));
+    cfg->brightness = 5;
+    cfg->show_clock = true;
+    cfg->message_id = 0;
+    cfg->message_seconds = 10;
+    strcpy(cfg->message_mode, "scroll");
+    cfg->utc_offset_hours = 0;
+    cfg->time_format_24h = true;
+    cfg->flip_display = false;
+    cfg->scroll_speed_ms = 60;
+    cfg->sound_enabled = true;
+    strcpy(cfg->sound_mode, "message");
+    cfg->tone_command[0] = '\0';
+    cfg->tone_id = 0;
+    cfg->ota_available = false;
+    cfg->ota_url[0] = '\0';
+    cfg->ota_version[0] = '\0';
+}
+
+static void save_display_config_to_nvs(const server_config_t *cfg)
+{
+    if (cfg == NULL)
+    {
+        return;
+    }
+
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open("display_cfg", NVS_READWRITE, &handle);
+    if (err != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Could not open display_cfg NVS for write: %s", esp_err_to_name(err));
+        return;
+    }
+
+    nvs_set_i32(handle, "brightness", cfg->brightness);
+    nvs_set_u8(handle, "show_clock", cfg->show_clock ? 1 : 0);
+    nvs_set_i32(handle, "msg_seconds", cfg->message_seconds);
+    nvs_set_str(handle, "msg_mode", cfg->message_mode);
+    nvs_set_i32(handle, "utc_offset", cfg->utc_offset_hours);
+    nvs_set_u8(handle, "time_24h", cfg->time_format_24h ? 1 : 0);
+    nvs_set_u8(handle, "flip", cfg->flip_display ? 1 : 0);
+    nvs_set_i32(handle, "scroll_ms", cfg->scroll_speed_ms);
+    nvs_set_u8(handle, "sound_en", cfg->sound_enabled ? 1 : 0);
+    nvs_set_str(handle, "sound_mode", cfg->sound_mode);
+
+    err = nvs_commit(handle);
+    if (err != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Could not commit display_cfg NVS: %s", esp_err_to_name(err));
+    }
+
+    nvs_close(handle);
+}
+
+static bool load_display_config_from_nvs(server_config_t *cfg)
+{
+    if (cfg == NULL)
+    {
+        return false;
+    }
+
+    set_default_server_config(cfg);
+
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open("display_cfg", NVS_READONLY, &handle);
+    if (err != ESP_OK)
+    {
+        ESP_LOGI(TAG, "No saved display config found, using defaults");
+        return false;
+    }
+
+    int32_t i32_value = 0;
+    uint8_t u8_value = 0;
+    size_t str_size = 0;
+
+    if (nvs_get_i32(handle, "brightness", &i32_value) == ESP_OK)
+    {
+        cfg->brightness = i32_value;
+    }
+
+    if (nvs_get_u8(handle, "show_clock", &u8_value) == ESP_OK)
+    {
+        cfg->show_clock = u8_value != 0;
+    }
+
+    if (nvs_get_i32(handle, "msg_seconds", &i32_value) == ESP_OK)
+    {
+        cfg->message_seconds = i32_value;
+    }
+
+    str_size = sizeof(cfg->message_mode);
+    if (nvs_get_str(handle, "msg_mode", cfg->message_mode, &str_size) != ESP_OK)
+    {
+        strcpy(cfg->message_mode, "scroll");
+    }
+
+    if (nvs_get_i32(handle, "utc_offset", &i32_value) == ESP_OK)
+    {
+        cfg->utc_offset_hours = i32_value;
+    }
+
+    if (nvs_get_u8(handle, "time_24h", &u8_value) == ESP_OK)
+    {
+        cfg->time_format_24h = u8_value != 0;
+    }
+
+    if (nvs_get_u8(handle, "flip", &u8_value) == ESP_OK)
+    {
+        cfg->flip_display = u8_value != 0;
+    }
+
+    if (nvs_get_i32(handle, "scroll_ms", &i32_value) == ESP_OK)
+    {
+        cfg->scroll_speed_ms = i32_value;
+    }
+
+    if (nvs_get_u8(handle, "sound_en", &u8_value) == ESP_OK)
+    {
+        cfg->sound_enabled = u8_value != 0;
+    }
+
+    str_size = sizeof(cfg->sound_mode);
+    if (nvs_get_str(handle, "sound_mode", cfg->sound_mode, &str_size) != ESP_OK)
+    {
+        strcpy(cfg->sound_mode, "message");
+    }
+
+    nvs_close(handle);
+
+    ESP_LOGI(TAG, "Loaded display config from NVS: brightness=%d show_clock=%d flip=%d utc=%d scroll=%d sound=%d mode=%s",
+             cfg->brightness,
+             cfg->show_clock,
+             cfg->flip_display,
+             cfg->utc_offset_hours,
+             cfg->scroll_speed_ms,
+             cfg->sound_enabled,
+             cfg->sound_mode);
+
+    return true;
+}
+
 void make_device_id(char *out, size_t out_size)
 {
     uint8_t mac[6];
@@ -91,7 +239,9 @@ void make_device_id(char *out, size_t out_size)
 static void play_named_tone(const char *tone)
 {
     if (tone == NULL)
+    {
         return;
+    }
 
     if (strcmp(tone, "success") == 0)
     {
@@ -113,9 +263,53 @@ static void play_named_tone(const char *tone)
     {
         buzzer_play_pattern(&g_buzzer, BUZZER_TONE_WIFI_CONNECTED);
     }
+    else if (strcmp(tone, "wifi_failed") == 0)
+    {
+        buzzer_play_pattern(&g_buzzer, BUZZER_TONE_WIFI_FAILED);
+    }
     else if (strcmp(tone, "message") == 0)
     {
         buzzer_play_pattern(&g_buzzer, BUZZER_TONE_MESSAGE);
+    }
+    else if (strcmp(tone, "nokia") == 0)
+    {
+        buzzer_play_pattern(&g_buzzer, BUZZER_TONE_NOKIA);
+    }
+    else if (strcmp(tone, "samsung_wash") == 0)
+    {
+        buzzer_play_pattern(&g_buzzer, BUZZER_TONE_SAMSUNG_WASH);
+    }
+    else if (strcmp(tone, "popcorn") == 0)
+    {
+        buzzer_play_pattern(&g_buzzer, BUZZER_TONE_POPCORN);
+    }
+    else if (strcmp(tone, "mario_coin") == 0)
+    {
+        buzzer_play_pattern(&g_buzzer, BUZZER_TONE_MARIO_COIN);
+    }
+    else if (strcmp(tone, "mario_powerup") == 0)
+    {
+        buzzer_play_pattern(&g_buzzer, BUZZER_TONE_MARIO_POWERUP);
+    }
+    else if (strcmp(tone, "zelda") == 0)
+    {
+        buzzer_play_pattern(&g_buzzer, BUZZER_TONE_ZELDA_SECRET);
+    }
+    else if (strcmp(tone, "tetris") == 0)
+    {
+        buzzer_play_pattern(&g_buzzer, BUZZER_TONE_TETRIS);
+    }
+    else if (strcmp(tone, "game_over") == 0)
+    {
+        buzzer_play_pattern(&g_buzzer, BUZZER_TONE_GAME_OVER);
+    }
+    else if (strcmp(tone, "doorbell") == 0)
+    {
+        buzzer_play_pattern(&g_buzzer, BUZZER_TONE_DOORBELL);
+    }
+    else if (strcmp(tone, "alarm") == 0)
+    {
+        buzzer_play_pattern(&g_buzzer, BUZZER_TONE_ALARM);
     }
     else
     {
@@ -166,8 +360,7 @@ void ota_animation_start(void)
         2048,
         NULL,
         4,
-        &ota_anim_task_handle
-    );
+        &ota_anim_task_handle);
 }
 
 void ota_animation_stop(void)
@@ -567,6 +760,8 @@ void update_shared_server_config(const server_config_t *cfg)
                 sizeof(g_state.server_cfg.message_mode) - 1);
         g_state.server_cfg.message_mode[sizeof(g_state.server_cfg.message_mode) - 1] = '\0';
 
+        save_display_config_to_nvs(&g_state.server_cfg);
+
         xSemaphoreGive(g_state_mutex);
     }
 }
@@ -842,9 +1037,22 @@ void app_main(void)
     };
 
     g_state_mutex = xSemaphoreCreateMutex();
+    if (g_state_mutex == NULL)
+    {
+        ESP_LOGE(TAG, "Failed to create state mutex");
+        return;
+    }
+
+    memset(&g_state, 0, sizeof(g_state));
+    if (!load_display_config_from_nvs(&g_state.server_cfg))
+    {
+        save_display_config_to_nvs(&g_state.server_cfg);
+    }
 
     ESP_ERROR_CHECK(max7219_init(&g_display, &cfg));
-    max7219_set_flip(&g_display, false); // upside down
+    max7219_set_intensity(&g_display, g_state.server_cfg.brightness);
+    max7219_set_flip(&g_display, g_state.server_cfg.flip_display);
+    // max7219_set_flip(&g_display, false); // upside down
     ESP_LOGI(TAG, "Driver test starting");
     // LOGO - TBD
     max7219_clear(&g_display);
@@ -899,11 +1107,9 @@ void app_main(void)
         buzzer_play_pattern(&g_buzzer, BUZZER_TONE_WIFI_CONNECTED);
         time_sync_init();
 
-        memset(&g_state, 0, sizeof(g_state));
-
-        g_state.server_cfg.show_clock = true;
-        g_state.server_cfg.brightness = 5;
-        g_state.server_cfg.scroll_speed_ms = 60;
+        // g_state.server_cfg.show_clock = true;
+        // g_state.server_cfg.brightness = 5;
+        // g_state.server_cfg.scroll_speed_ms = 60;
 
         strcpy(g_state.current_time, "--:--");
         xTaskCreate(clock_task, "clock_task", 2048, NULL, 5, NULL);

@@ -145,9 +145,161 @@ esp_err_t buzzer_deinit(buzzer_t *buzzer)
 
 static esp_err_t play_note(buzzer_t *bz, int freq, int duration_ms)
 {
-    ESP_ERROR_CHECK(buzzer_play_tone(bz, freq, duration_ms));
+    if (freq <= 0)
+    {
+        buzzer_stop(bz);
+        vTaskDelay(pdMS_TO_TICKS(duration_ms));
+        return ESP_OK;
+    }
+
+    esp_err_t err = buzzer_play_tone(bz, freq, duration_ms);
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+
     vTaskDelay(pdMS_TO_TICKS(30));
     return ESP_OK;
+}
+
+static esp_err_t play_melody(buzzer_t *bz, const int *notes, const int *durations, int count, int gap_ms)
+{
+    if (bz == NULL || notes == NULL || durations == NULL || count <= 0)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    for (int i = 0; i < count; i++)
+    {
+        esp_err_t err = play_note(bz, notes[i], durations[i]);
+        if (err != ESP_OK)
+        {
+            return err;
+        }
+
+        if (gap_ms > 0)
+        {
+            vTaskDelay(pdMS_TO_TICKS(gap_ms));
+        }
+    }
+
+    return ESP_OK;
+}
+
+static esp_err_t play_nokia_melody(buzzer_t *bz)
+{
+    const int notes[] = {
+        659, 587, 370, 415,
+        554, 494, 294, 330,
+        494, 440, 277, 330,
+        440
+    };
+
+    const int durations[] = {
+        120, 120, 240, 240,
+        120, 120, 240, 240,
+        120, 120, 240, 240,
+        300
+    };
+
+    return play_melody(bz, notes, durations, 13, 20);
+}
+
+static esp_err_t play_samsung_wash_melody(buzzer_t *bz)
+{
+    const int notes[] = {
+        523, 659, 784, 1047,
+        784, 1047, 1319, 1047,
+        784, 659, 784, 523
+    };
+
+    const int durations[] = {
+        150, 150, 150, 250,
+        150, 150, 250, 150,
+        150, 150, 150, 300
+    };
+
+    return play_melody(bz, notes, durations, 12, 40);
+}
+
+static esp_err_t play_popcorn_melody(buzzer_t *bz)
+{
+    const int notes[] = {
+        784, 698, 784, 587,
+        523, 587, 523, 494,
+        523, 587, 659, 587,
+        659, 784
+    };
+
+    const int durations[] = {
+        100, 100, 100, 100,
+        100, 100, 100, 180,
+        100, 100, 100, 100,
+        100, 240
+    };
+
+    return play_melody(bz, notes, durations, 14, 25);
+}
+
+static esp_err_t play_mario_coin_melody(buzzer_t *bz)
+{
+    const int notes[] = {988, 1319};
+    const int durations[] = {80, 180};
+    return play_melody(bz, notes, durations, 2, 20);
+}
+
+static esp_err_t play_mario_powerup_melody(buzzer_t *bz)
+{
+    const int notes[] = {523, 659, 784, 1047, 1319, 1568};
+    const int durations[] = {70, 70, 70, 70, 70, 140};
+    return play_melody(bz, notes, durations, 6, 15);
+}
+
+static esp_err_t play_zelda_secret_melody(buzzer_t *bz)
+{
+    const int notes[] = {784, 740, 622, 440, 415, 659, 831, 1047};
+    const int durations[] = {120, 120, 120, 120, 120, 120, 120, 250};
+    return play_melody(bz, notes, durations, 8, 25);
+}
+
+static esp_err_t play_tetris_melody(buzzer_t *bz)
+{
+    const int notes[] = {
+        659, 494, 523, 587,
+        523, 494, 440, 440,
+        523, 659, 587, 523,
+        494
+    };
+
+    const int durations[] = {
+        180, 90, 90, 180,
+        90, 90, 180, 90,
+        90, 180, 90, 90,
+        250
+    };
+
+    return play_melody(bz, notes, durations, 13, 20);
+}
+
+static esp_err_t play_game_over_melody(buzzer_t *bz)
+{
+    const int notes[] = {784, 698, 659, 587, 523, 392};
+    const int durations[] = {120, 120, 120, 120, 160, 300};
+    return play_melody(bz, notes, durations, 6, 30);
+}
+
+static esp_err_t play_doorbell_melody(buzzer_t *bz)
+{
+    const int notes[] = {659, 523};
+    const int durations[] = {300, 450};
+    return play_melody(bz, notes, durations, 2, 80);
+}
+
+static esp_err_t play_alarm_melody(buzzer_t *bz)
+{
+    const int notes[] = {1200, 0, 1200, 0, 1200, 0, 800, 0, 800};
+    const int durations[] = {120, 80, 120, 80, 120, 120, 160, 80, 160};
+    return play_melody(bz, notes, durations, 9, 0);
 }
 
 esp_err_t buzzer_play_pattern(buzzer_t *bz, buzzer_tone_t tone)
@@ -192,6 +344,46 @@ esp_err_t buzzer_play_pattern(buzzer_t *bz, buzzer_tone_t tone)
 
         case BUZZER_TONE_MESSAGE:
             play_note(bz, 1400, 120);
+            break;
+
+        case BUZZER_TONE_NOKIA:
+            play_nokia_melody(bz);
+            break;
+
+        case BUZZER_TONE_SAMSUNG_WASH:
+            play_samsung_wash_melody(bz);
+            break;
+
+        case BUZZER_TONE_POPCORN:
+            play_popcorn_melody(bz);
+            break;
+
+        case BUZZER_TONE_MARIO_COIN:
+            play_mario_coin_melody(bz);
+            break;
+
+        case BUZZER_TONE_MARIO_POWERUP:
+            play_mario_powerup_melody(bz);
+            break;
+
+        case BUZZER_TONE_ZELDA_SECRET:
+            play_zelda_secret_melody(bz);
+            break;
+
+        case BUZZER_TONE_TETRIS:
+            play_tetris_melody(bz);
+            break;
+
+        case BUZZER_TONE_GAME_OVER:
+            play_game_over_melody(bz);
+            break;
+
+        case BUZZER_TONE_DOORBELL:
+            play_doorbell_melody(bz);
+            break;
+
+        case BUZZER_TONE_ALARM:
+            play_alarm_melody(bz);
             break;
 
         case BUZZER_TONE_NOTIFICATION:
