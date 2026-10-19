@@ -32,7 +32,7 @@ jobs:
       - name: Upload Firmware Binaries
         uses: actions/upload-artifact@v4
         with:
-          name: firmware-binaries
+          name: firmware-bin-${{ github.ref_name }}
           path: |
             build/*.bin
             build/bootloader/bootloader.bin
