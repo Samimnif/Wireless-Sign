@@ -24,7 +24,7 @@ jobs:
       - name: Build ESP-IDF Project
         uses: espressif/esp-idf-ci-action@v1
         with:
-          esp_idf_version: v5.1  # Change this to match the ESP-IDF version your project uses (e.g., v4.4, v5.2, etc.)
+          esp_idf_version: v5.5.2  # Change this to match the ESP-IDF version your project uses (e.g., v4.4, v5.2, etc.)
           target: esp32         # Change to esp32s2, esp32c3, etc., depending on your target chip
           path: '.'             # Path to your project root
 
